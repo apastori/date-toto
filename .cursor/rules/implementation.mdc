@@ -1,0 +1,197 @@
+---
+description: Canonical C11 implementation for date-toto — module layout, format engine, parsing, SIGPIPE, buffer policy, and exit behaviour
+globs: ["src/**/*.c", "include/**/*.h"]
+alwaysApply: false
+---
+
+# date-toto — Implementation (C11)
+
+## Module layout
+
+| Path | Role |
+|------|------|
+| `include/date_toto.h` | `DATE_TOTO_OUT_SIZE` (4096), `DATE_TOTO_FMT_STACK_CAP` (4096), `DATE_TOTO_VERSION_STRING`, `DATE_TOTO_DEFAULT_FORMAT` (`"%a %b %e %H:%M:%S %Z %Y"`), `DATE_TOTO_EXIT_*` enum, `struct date_toto_tm`, `days_from_civil()` / `civil_from_days()` / `date_toto_break_down()` (`static inline`), `date_toto_run()` declaration |
+| `include/date_toto_emit.h` | `date_toto_emit_error()`, `date_toto_emit_invalid_date()` |
+| `include/date_toto_fmt.h` | `date_toto_format()` |
+| `include/date_toto_parse.h` | `date_toto_parse_date()`, `date_toto_parse_reference()` |
+| `include/date_toto_cli.h` | option scan, `print_help()`, `print_version()`, `install_sigpipe_ignore()` |
+| `src/main.c` | `main()` only — dispatch help/version, setup, resolve instant, call `date_toto_run()` |
+| `src/date_toto_emit.c` | stderr diagnostics |
+| `src/date_toto_write.c` | `date_toto_run()`, static `try_write_all()`, `maybe_normalize_broken_pipe_errno()`, raw `write()` of one line |
+| `src/date_toto_fmt.c` | Expand `+FORMAT` (or implied ISO/RFC format) into the output slab; append `\n` |
+| `src/date_toto_parse.c` | `-d` date strings and `-r` file mtime → epoch instant + offset |
+| `src/date_toto_cli.c` | Meta-flag / option scan, help/version text, SIGPIPE setup |
+
+Each `.c` file opens with a **chain-of-thought comment block** (responsibility, syscalls, heap on output path, C standard). Preserve that pattern when adding files.
+
+## C standard
+
+**ISO C11** (`-std=c11`), `-D_POSIX_C_SOURCE=200809L` for Linux POSIX.1-2008 (`sigaction`, `write`, `clock_gettime`, `localtime_r`, `stat`, etc.).
+MinGW builds define `_WIN32`; signal setup and the reentrant localtime call are guarded there (see below).
+
+## Output buffer size (4 KiB)
+
+`DATE_TOTO_OUT_SIZE` / `DATE_TOTO_FMT_STACK_CAP` are **4096** bytes.
+
+Rationale: a single formatted date line is tiny; 4 KiB is ample for any supported format expansion and keeps the stack footprint small. Aligns with amortising one `write()` for the whole line.
+
+`date_toto_format()` writes into a stack slab of that size. If expansion would exceed `DATE_TOTO_FMT_STACK_CAP`, a **single `malloc()`** before the write is allowed (not on a hot loop — there is none).
+
+## Instant resolution
+
+1. Default: `clock_gettime(CLOCK_REALTIME)` → epoch seconds.
+2. `-d` / `--date=STRING`: parse STRING relative to “now” (or absolute) into an epoch.
+3. `-r` / `--reference=FILE`: `stat` the file; use `st_mtime` as the epoch.
+4. `-d` and `-r` are **mutually exclusive** — emit an error and exit `1` if both appear.
+5. At most one output-format source: a `+FORMAT` operand, or `-I` / `--iso-8601[=FMT]`, or `-R` / `--rfc-email`. Multiple format sources → error, exit `1`.
+
+## UTC offset acquisition
+
+Do **not** rely on non-standard `tm_gmtoff`.
+
+Portable approach:
+
+1. Take the epoch seconds `t`.
+2. Call the reentrant local-time converter (`localtime_r` on POSIX; under `_WIN32` use the platform-equivalent reentrant API, never bare `localtime` / `gmtime`).
+3. Round-trip the resulting civil fields through `days_from_civil()` to recover the local wall-clock as an offset from UTC; store `offset_sec` and the timezone abbreviation string for `%z` / `%Z`.
+4. With `-u` / `--utc` / `--universal`: force `offset_sec = 0` and `%Z` → `"UTC"` (do not consult the local zone for output).
+
+## Required format directives
+
+Own engine only — **no `strftime`**. Unknown `%` sequences are emitted **verbatim** (GNU-style: the `%` and the following character(s) as written).
+
+| Directive | Meaning |
+|-----------|---------|
+| `%Y` | Four-digit year |
+| `%y` | Two-digit year |
+| `%C` | Century (year / 100) |
+| `%m` | Month `01`–`12` |
+| `%d` | Day of month `01`–`31` |
+| `%e` | Day of month, space-padded |
+| `%H` | Hour `00`–`23` |
+| `%I` | Hour `01`–`12` |
+| `%M` | Minute `00`–`59` |
+| `%S` | Second `00`–`60` |
+| `%j` | Day of year `001`–`366` |
+| `%s` | Seconds since 1970-01-01 00:00:00 UTC |
+| `%u` | Weekday `1`–`7` (Monday = 1) |
+| `%w` | Weekday `0`–`6` (Sunday = 0) |
+| `%a` | Abbreviated weekday (C locale English) |
+| `%A` | Full weekday |
+| `%b` / `%h` | Abbreviated month |
+| `%B` | Full month |
+| `%p` | `AM` / `PM` |
+| `%P` | `am` / `pm` |
+| `%Z` | Timezone abbreviation |
+| `%z` | Numeric offset `±HHMM` |
+| `%:z` | Numeric offset `±HH:MM` |
+| `%F` | `%Y-%m-%d` |
+| `%T` | `%H:%M:%S` |
+| `%D` | `%m/%d/%y` |
+| `%R` | `%H:%M` |
+| `%c` | Preferred date+time (C-locale GNU-like default shape) |
+| `%x` | Preferred date |
+| `%X` | Preferred time |
+| `%n` | Newline |
+| `%t` | Tab |
+| `%%` | Literal `%` |
+
+Names and AM/PM are **fixed English** (C locale). No GNU padding flags (`%-`, `%_`, `%^`) or field widths. No `%N`.
+
+## `-I` / `--iso-8601[=FMT]` and `-R`
+
+| Form | Implied format behaviour |
+|------|--------------------------|
+| `-I` / `--iso-8601` / `--iso-8601=date` | Date only: `YYYY-MM-DD` |
+| `--iso-8601=hours` | `YYYY-MM-DDTHH±HH:MM` |
+| `--iso-8601=minutes` | `YYYY-MM-DDTHH:MM±HH:MM` |
+| `--iso-8601=seconds` | `YYYY-MM-DDTHH:MM:SS±HH:MM` |
+| `-R` / `--rfc-email` | RFC 5322: e.g. `Sun, 06 Sep 2026 18:18:42 -0300` |
+
+Precision names are case-sensitive as GNU documents them. Invalid precision → error, exit `1`.
+
+## `-d` / `--date=STRING` grammar
+
+Accepted forms (minimal GNU-compatible subset):
+
+| Form | Example |
+|------|---------|
+| `@EPOCH` | `@1788725922` |
+| ISO-ish datetime | `2026-12-25`, `2026-12-25 15:30:00`, `2026-12-25T15:30:00`, optional `Z` or `±HH[:MM]` |
+| Time only | `15:30`, `15:30:00` (on today's date in the active zone) |
+| Keywords | `now`, `today`, `yesterday`, `tomorrow` |
+| Relative | `[+|-]N unit[s] [ago]` — units: `second`, `minute`, `hour`, `day`, `week`, `month`, `year` |
+| Next / last | `next week`, `last month`, `next day`, etc. |
+
+Month/year offsets **normalise day overflow** like GNU `date` (e.g. Jan 31 + 1 month → last day of February in that year).
+
+Unparseable strings → `date-toto: invalid date '<s>'` on stderr, exit `1`.
+
+## Output path (`src/date_toto_write.c`)
+
+**Allowed:**
+
+- Stack (or one pre-write heap) buffer holding the finished line including `\n`
+- `write(STDOUT_FILENO, …)` until the chunk is fully sent (partial writes retried)
+- `EINTR` retry on `write`
+
+**Forbidden:**
+
+- `printf` / `fprintf` / `puts` / `fputs` / `fwrite` on the stdout output path
+- `malloc` / `calloc` / `realloc` inside `try_write_all()` / the write loop
+
+On `EPIPE`: `fflush(stdout)` (ignore return value), then `exit(DATE_TOTO_EXIT_OK)` (0).
+On other write errors: `date_toto_emit_error("write")`, `exit(1)`.
+
+## SIGPIPE / EPIPE (cross-platform)
+
+| Platform | `install_sigpipe_ignore()` | Broken pipe |
+|----------|----------------------------|-------------|
+| **Linux / POSIX** | `sigaction(SIGPIPE, SIG_IGN, NULL)` | `write()` → `errno == EPIPE` |
+| **Windows / MinGW (`_WIN32`)** | **No-op** (returns 0) — no `SIGPIPE` | `write()` failure; CRT may set `EPIPE` or `EINVAL`; `maybe_normalize_broken_pipe_errno()` remaps `EINVAL` on pipe fds to `EPIPE` |
+
+Ignoring `SIGPIPE` is the POSIX idiom so `write()` fails with `EPIPE` instead of terminating the process.
+
+## Exit codes
+
+| Code | Constant | Meaning |
+|------|----------|---------|
+| `0` | `DATE_TOTO_EXIT_OK` | Successful output, `--help`, `--version`, or broken pipe |
+| `1` | `DATE_TOTO_EXIT_ERR` | Invalid option/date, `-r` failure, write/setup failure, OOM in format, signal setup failure |
+
+No exit `130` — `date-toto` performs one write and exits; there is no infinite loop or SIGINT stop flag.
+
+## Error messages
+
+Syscall / libc failures on **stderr**, one line:
+
+`date-toto: <context>: <strerror(errno)>`
+
+Non-errno parse failures:
+
+`date-toto: invalid date '<string>'`
+
+Never print errors to stdout.
+
+## Argument parsing (`src/date_toto_cli.c`)
+
+1. Scan **all** `argv[1…]`: exact `--help` or `--h` → help + exit 0 (**wins** over version).
+2. Else exact `--version` or `--v` → `date-toto <version>\n` + exit 0.
+3. Else parse options: `-u` / `--utc` / `--universal`, `-d` / `--date=STRING` / `--date STRING`, `-r` / `--reference=FILE` / `--reference FILE`, `-I[FMT]` / `--iso-8601[=FMT]`, `-R` / `--rfc-email`.
+4. A single operand starting with `+` is the format string (without requiring the `+` in the engine input — strip the leading `+`).
+5. Unknown options / clustered short options that are not supported → error, exit `1` (unlike `yes-toto`, unknown flags are **not** treated as payload).
+6. No operand and no `-I`/`-R` → `DATE_TOTO_DEFAULT_FORMAT`.
+
+## `date_toto_break_down()` contract
+
+In `include/date_toto.h`:
+
+- **Precondition:** `out != NULL`; for `days_from_civil` / `civil_from_days` helpers, month `m` is in `1..12` and day is valid for that month when callers claim a civil triple
+- **Postcondition:** all `struct date_toto_tm` fields normalised; `wday` in `0..6` (Sunday = 0); `yday` in `1..366`
+- **Out-of-range month/day:** precondition violated — **undefined**; callers and tests must not exercise invalid civil triples through the helpers
+
+## Naming
+
+Public run entry point: **`date_toto_run()`** (not bare `run`).
+Format entry: **`date_toto_format()`**.
+Parse entries: **`date_toto_parse_date()`**, **`date_toto_parse_reference()`**.

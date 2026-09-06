@@ -1,0 +1,127 @@
+---
+description: C toolchain, build system, and directory structure for date-toto
+globs: ["Makefile", "*.c", "*.h", "src/**/*.c", "include/**/*.h", "tests/**/*.c"]
+alwaysApply: false
+---
+
+# Toolchain & Project Structure
+
+## Language
+
+**C11** (`-std=c11`). **No C++.**
+
+## Compiler flags (from `Makefile`)
+
+```
+-std=c11 -Wall -Wextra -Wpedantic -Werror
+-D_POSIX_C_SOURCE=200809L
+-Iinclude
+-O2          # release
+```
+
+Debug target adds `-g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer`.
+
+## Compiler selection
+
+`Makefile` picks **gcc** if available, else **clang**:
+
+```makefile
+CC := $(shell command -v gcc >/dev/null 2>&1 && echo gcc || echo clang)
+```
+
+## Build system
+
+**GNU Make** at repo root. Separate compile (`.o`) and link steps. All artefacts under **`build/`**.
+
+| Target | Output |
+|--------|--------|
+| `make` / `all` | `build/date-toto` |
+| `make debug` | `build/date-toto-debug` |
+| `make test` | builds + runs `build/tests/test_core` |
+| `make clean` | removes objects/binaries under `build/`; keeps `.gitkeep` |
+| `make install` | `install -m 755 build/date-toto /usr/local/bin` (Linux/macOS; needs sudo) |
+
+**Main sources:** `src/main.c`, `src/date_toto_emit.c`, `src/date_toto_write.c`, `src/date_toto_fmt.c`, `src/date_toto_parse.c`, `src/date_toto_cli.c` → objects `build/*.o`
+
+**Test sources:** `tests/test_runner.c`, `tests/test_civil_epoch_zero.c`, `tests/test_civil_roundtrip.c`, `tests/test_civil_leap_year.c`, `tests/test_civil_offset.c`, `tests/test_civil_ub_note.c` → objects `build/tests/*.o`
+
+## Dependencies
+
+**libc only** — no extra `-l` flags. POSIX headers: `unistd.h`, `signal.h`, `time.h`, `sys/stat.h`, etc.
+
+## Directory layout
+
+```
+date-toto/
+├── LICENSE.txt          — GNU GPL v2 (full text)
+├── c_version.txt        — C11 / compiler / toolchain documentation
+├── .cursor/rules/
+├── Makefile
+├── README.md
+├── include/
+│   ├── date_toto.h
+│   ├── date_toto_emit.h
+│   ├── date_toto_fmt.h
+│   ├── date_toto_parse.h
+│   └── date_toto_cli.h
+├── src/
+│   ├── main.c
+│   ├── date_toto_emit.c
+│   ├── date_toto_write.c
+│   ├── date_toto_fmt.c
+│   ├── date_toto_parse.c
+│   └── date_toto_cli.c
+├── tests/
+│   ├── test_runner.c
+│   ├── test_civil_epoch_zero.c / .h
+│   ├── test_civil_roundtrip.c / .h
+│   ├── test_civil_leap_year.c / .h
+│   ├── test_civil_offset.c / .h
+│   └── test_civil_ub_note.c / .h
+└── build/               — scaffolding tracked; artefacts gitignored
+    ├── .gitkeep
+    ├── *.o              — generated
+    ├── date-toto        — generated
+    ├── date-toto-debug  — generated
+    └── tests/
+        ├── .gitkeep
+        ├── *.o          — generated
+        └── test_core    — generated
+```
+
+Build artefacts under `build/` (including `date-toto.exe` / `test_core.exe` on Windows) are gitignored. Directories stay in the repo via `build/.gitkeep` and `build/tests/.gitkeep`.
+
+## Building on Linux
+
+```sh
+make clean && make && make test
+./build/date-toto --version
+```
+
+## Building on Windows (MSYS2 UCRT64)
+
+**Recommended:** open **MSYS2 UCRT64** from the Start menu:
+
+```sh
+pacman -S make mingw-w64-ucrt-x86_64-gcc   # once
+cd /path/to/date-toto
+make clean && make && make test
+./build/date-toto --version
+```
+
+Produces a **native Windows executable** (`build/date-toto` or `build/date-toto.exe`). Runs in UCRT64, Git Bash, and CMD.
+
+### Git Bash caveat
+
+Git Bash can build if **`/c/msys64/ucrt64/bin` is early on `PATH`**. Otherwise `gcc --version` may work while `cc1` fails silently (DLL load order). Prefer UCRT64 shell or:
+
+```bash
+PATH="/c/msys64/ucrt64/bin:$PATH" make
+```
+
+## Linking notes
+
+- Civil helpers (`days_from_civil`, `civil_from_days`, `date_toto_break_down`) are `static inline` in `date_toto.h` — compiled into translation units that include the header (fmt/parse and each test TU).
+- Tests **do not** link `src/*.c`; they only exercise the inline civil helpers via the header.
+- `main()` lives only in `src/main.c`.
+- Debug binary is linked in one step from sources with `CFLAGS_DEBUG` (does not reuse release `.o` files).

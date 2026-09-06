@@ -1,0 +1,77 @@
+---
+description: Unit test layout and conventions for date-toto (civil / epoch helpers)
+globs: ["tests/**/*.c", "tests/**/*.h", "Makefile"]
+alwaysApply: false
+---
+
+# Testing — date-toto
+
+## Scope
+
+The Makefile `test` target builds and runs **`build/tests/test_core`** (or `build/tests/test_core.exe` on Windows).
+
+Tests cover the **`static inline` civil/epoch helpers** in `date_toto.h` only (`days_from_civil`, `civil_from_days`, `date_toto_break_down`). There are **no** subprocess/integration tests in-tree; `date_toto_format()` and `date_toto_parse.c` are exercised by manual smoke tests.
+
+## Layout
+
+| File | Role |
+|------|------|
+| `tests/test_runner.c` | `main()` — invokes all suites in fixed order |
+| `tests/test_civil_epoch_zero.c` / `.h` | epoch 0 → 1970-01-01 00:00:00 UTC fields; `wday` 4; `yday` 1 |
+| `tests/test_civil_roundtrip.c` / `.h` | `days_from_civil` / `civil_from_days` round-trip across a day range |
+| `tests/test_civil_leap_year.c` / `.h` | 1900 / 2000 / 2024 / 2026 leap rules; 2024-02-29; `yday` of Mar 1 |
+| `tests/test_civil_offset.c` / `.h` | non-zero offsets shift fields and cross day boundaries (`-03:00`, `+14:00`) |
+| `tests/test_civil_ub_note.c` / `.h` | documents out-of-range month/day as precondition violation (UB); not exercised |
+
+One scenario per `.c` / `.h` pair; headers declare the test function for `test_runner.c`.
+
+## Framework
+
+- No external framework — plain C with `<assert.h>`.
+- Each case prints `PASS: <descriptive name>` on success.
+- `assert()` failure → `abort()` → non-zero exit from `make test`.
+
+## Build (from `Makefile`)
+
+Objects and the test binary live under `build/tests/`:
+
+```makefile
+TEST_CORE := build/tests/test_core
+# $(TEST_BUILD_DIR)/%.o ← tests/%.c
+# link $(TEST_CORE) from $(TEST_OBJS)
+test: $(TEST_CORE)
+	./$(TEST_CORE)
+```
+
+Civil helpers come from `#include "date_toto.h"` in each test file — **no link with `src/*.c`**.
+
+## Required cases (behaviour)
+
+1. Epoch zero: `date_toto_break_down(0, 0, …)` → year 1970, month 1, day 1, hour/min/sec 0; `wday == 4`; `yday == 1`.
+2. Round-trip: for a span of civil dates, `civil_from_days(days_from_civil(y,m,d), …)` recovers `(y,m,d)`.
+3. Leap years: 1900 not leap, 2000 leap, 2024 leap, 2026 not leap; 2024-02-29 valid; Mar 1 `yday` correct for leap vs non-leap.
+4. Offsets: e.g. epoch near midnight with `offset_sec = -3*3600` or `+14*3600` shifts calendar day/hour as expected.
+5. Out-of-range month/day: **undefined** per API contract — print PASS note only; do not call the helpers with invalid civil triples.
+
+## Adding tests
+
+- Add `tests/test_civil_<name>.c` + `.h`, declare runner function in `.h`, call from `test_runner.c`, append to `TEST_SRCS` in `Makefile`.
+- Keep tests allocation-free; stack buffers / locals only.
+
+## Manual smoke tests (not automated)
+
+After `make`:
+
+```sh
+./build/date-toto --version
+./build/date-toto --help
+./build/date-toto
+./build/date-toto '+%Y-%m-%dT%H:%M:%S'
+./build/date-toto -u '+%Y-%m-%d %H:%M:%S'
+./build/date-toto -d '7 days ago' +%F
+./build/date-toto -Iseconds
+./build/date-toto -R
+./build/date-toto +%Y | head -c 4    # expect exit 0, no stderr (broken pipe)
+```
+
+Interactive: compare a few formats against system `date` on Linux for spot-checks within the supported subset.

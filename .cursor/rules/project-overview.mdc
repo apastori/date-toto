@@ -1,0 +1,96 @@
+---
+description: Project identity, purpose, and high-level goals for `date-toto`
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# date-toto — Project Overview
+
+## What This Project Is
+
+`date-toto` is a faithful CLI replica of the GNU Core Utilities `date` command.
+It displays, formats, and converts date and time information to stdout — a single
+formatted line ending in a newline — then exits.
+
+Formatting is done by a self-implemented `%` directive engine and civil-date/epoch
+arithmetic (C locale only). libc supplies only the current instant
+(`clock_gettime`), the local UTC offset, and the timezone abbreviation. No
+`strftime`.
+
+## Binary Name
+
+The compiled binary must always be named **`date-toto`**. Never rename it.
+On Windows, MinGW may also emit `date-toto.exe`; that is the same program.
+
+## Platforms
+
+| Platform | Build environment | Notes |
+|----------|-------------------|-------|
+| **Linux** | `gcc`/`clang` + GNU Make | Full POSIX path: `sigaction(SIGPIPE, SIG_IGN)` |
+| **Windows** | **MSYS2 UCRT64** (recommended) | Native Windows `.exe`; `install_sigpipe_ignore()` is a no-op under `_WIN32` |
+| **Git Bash** | Works if `/c/msys64/ucrt64/bin` is **early** on `PATH` | Same binary as UCRT64; see `toolchain-structure.mdc` |
+
+Binaries are **not portable** across OSes — build separately on Linux and on Windows.
+
+## Scope — Keep It Minimal
+
+Supporting behaviour:
+
+- Bare `date-toto` — default format (GNU-like: `%a %b %e %H:%M:%S %Z %Y`)
+- `+FORMAT` operand — self-implemented conversion directives
+- `-u` / `--utc` / `--universal` — use UTC
+- `-d` / `--date=STRING` — display a date described by STRING (ISO-ish + simple relative)
+- `-r` / `--reference=FILE` — use the referenced file's modification time
+- `-I` / `--iso-8601[=FMT]` — ISO 8601-style output
+- `-R` / `--rfc-email` — RFC 5322-style output
+- Built-in `--help` / `--h` and `--version` / `--v` (detected anywhere in `argv`; help wins if both appear)
+
+**Do not add**:
+
+- Clock setting (`-s` / `--set`, `MMDDhhmm[[CC]YY][.ss]` operand)
+- `-f` / `--file=DATEFILE`
+- `--debug`
+- Locales beyond C (weekday/month names are English, fixed)
+- Sub-second `%N` and GNU padding/flag modifiers (`%-`, `%_`, `%^`, field widths)
+- Interactive or TUI modes
+- stdin reading (except what `-r` does via the filesystem)
+- Logging or debug output in normal operation
+- Single-dash `-h` / `-v` (only `--help`, `--h`, `--version`, and `--v` are special among those forms)
+- Any feature that would break GNU `date` behavioural compatibility within the supported subset
+
+## Behavioural Contract
+
+| Invocation | Output / behaviour |
+|---|---|
+| `date-toto` | prints current local date/time in the default format, one line + `\n`, exits `0` |
+| `date-toto +%Y-%m-%d` | prints formatted date (e.g. `2026-09-06\n`), exits `0` |
+| `date-toto +%s` | prints Unix timestamp (seconds since 1970-01-01 UTC), exits `0` |
+| `date-toto -u` / `date-toto --utc` | same as default, but in UTC (`%Z` → `UTC`) |
+| `date-toto -u '+%Y-%m-%d %H:%M:%S'` | UTC with custom format |
+| `date-toto -d tomorrow` / `date-toto --date=tomorrow` | formats the described instant |
+| `date-toto -d '7 days ago' +%F` | relative date + format |
+| `date-toto -r FILE` / `date-toto --reference=FILE` | formats the file's mtime |
+| `date-toto -I` / `date-toto --iso-8601` | ISO 8601 date (date precision) |
+| `date-toto -Iseconds` / `date-toto --iso-8601=seconds` | ISO 8601 with seconds + offset |
+| `date-toto -R` / `date-toto --rfc-email` | RFC 5322-style date line |
+| `date-toto --version` / `date-toto --v` | prints `date-toto <version>\n`, exits `0` |
+| `date-toto --help` / `date-toto --h` | prints usage on stdout, exits `0` |
+| `date-toto +%Y \| head -c 4` | may exit `0` on broken pipe (`EPIPE`) |
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Successful print, `--help`, `--version`, or broken pipe (`EPIPE` on `write`) |
+| `1` | Invalid option, invalid date string, unreadable `-r` file, other `write()` failure, OOM formatting, or signal setup failure |
+
+## Project Layout (summary)
+
+```
+include/   — date_toto.h + date_toto_{emit,fmt,parse,cli}.h
+src/       — main.c + date_toto_{emit,write,fmt,parse,cli}.c
+tests/     — test_runner.c + test_civil_*.c / .h
+build/     — objects + binaries; dirs via .gitkeep, artefacts gitignored
+```
+
+See `implementation.mdc`, `toolchain-structure.mdc`, and `testing.mdc` for detail.

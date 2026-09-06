@@ -1,0 +1,83 @@
+---
+description: C code style, formatting, naming, and quality rules for date-toto
+globs: ["src/**/*.c", "include/**/*.h", "tests/**/*.c", "tests/**/*.h", "Makefile"]
+alwaysApply: false
+---
+
+# Code Style & Quality
+
+## Standard & flags
+
+- **C11** (`-std=c11`)
+- `-Wall -Wextra -Wpedantic -Werror`
+- `-D_POSIX_C_SOURCE=200809L`
+- Zero warnings — all treated as errors
+
+## Formatting
+
+- **Indentation:** 4 spaces. No tabs.
+- **Function definitions:** opening brace on its own line.
+- **Line length:** prefer ≤80 characters where practical.
+- **Files end with a single newline.**
+
+## Module conventions
+
+- **`src/main.c`** stays thin — wiring only; no format expansion, no date parsing beyond dispatch.
+- **`include/date_toto.h`** — `static inline` civil helpers (`days_from_civil`, `civil_from_days`, `date_toto_break_down`) are intentional (shared by `date_toto_fmt.c` / `date_toto_parse.c` and tests without linking `src/`).
+- **One concern per `src/date_toto_*.c`** — do not collapse back into a monolith without reason.
+- **Platform code:** use `#if defined(_WIN32)` / `#else` for OS-specific behaviour (see `install_sigpipe_ignore()` in `date_toto_cli.c`, and the reentrant localtime call).
+
+## Naming
+
+| Kind | Style | Examples |
+|------|-------|----------|
+| Functions | `snake_case` | `date_toto_run`, `date_toto_format`, `date_toto_parse_date`, `date_toto_break_down`, `days_from_civil` |
+| Macros / constants | `UPPER_SNAKE_CASE` | `DATE_TOTO_OUT_SIZE`, `DATE_TOTO_FMT_STACK_CAP`, `DATE_TOTO_DEFAULT_FORMAT` |
+| Headers | `DATE_TOTO_*_H` guards | `DATE_TOTO_H`, `DATE_TOTO_CLI_H` |
+
+Public API prefix: **`date_toto_`** for module entry points; `days_from_civil` / `civil_from_days` / `date_toto_break_down` are the spec names for the inline helpers.
+
+## Memory
+
+- **Output path:** stack slab — `char buf[DATE_TOTO_OUT_SIZE]` (or format into `DATE_TOTO_FMT_STACK_CAP`); no heap inside `try_write_all()`.
+- **Pre-write:** one optional `malloc()` in `date_toto_format()` when expansion exceeds `DATE_TOTO_FMT_STACK_CAP` (4096).
+- No `realloc` in-tree.
+
+## Output path rules (`date_toto_write.c`)
+
+- `write(STDOUT_FILENO, …)` with partial-write and `EINTR` retry.
+- No `printf` / `fprintf` / `puts` / `fputs` / `fwrite` on the stdout output path.
+- `exit()` on `EPIPE` (status 0) or unrecoverable write error (status 1) inside `try_write_all()` / `date_toto_run()` is acceptable — these functions do not return on the failure path.
+
+## Errors
+
+- **stderr only:**
+  - Syscall / libc: `date-toto: <context>: <strerror(errno)>`
+  - Bad date string: `date-toto: invalid date '<string>'`
+- Implemented in `date_toto_emit.c`
+
+## Comments
+
+- Chain-of-thought block at top of each `src/*.c` and test file (see existing files).
+- Contract comments on non-trivial functions: preconditions, postconditions, return value, error behaviour.
+- Comment non-obvious decisions (buffer size, platform guards, leap-year edge cases); not obvious code.
+
+## Tests
+
+- Plain `assert()` — no external test framework.
+- One scenario per `tests/test_civil_*.c`; runner in `tests/test_runner.c`.
+- Print `PASS: <name>` on success.
+
+## What not to do
+
+- Do not compile as C++.
+- Do not link libraries beyond libc.
+- Do not use `gets`, unbounded `scanf`, or ignore `write()` byte counts.
+- Do not use `strftime` — own `%` engine only.
+- Do not use non-reentrant `localtime` / `gmtime`.
+- Do not use `mktime` for date arithmetic — own civil/epoch helpers.
+- Do not depend on locale for weekday/month names or AM/PM.
+- Do not treat unknown options as payload (unlike `yes`); reject them with exit `1`.
+- Do not add `-h` / `-v` unless explicitly requested (breaks current contract).
+- Do not use `fwrite` on the output path — project standard is raw `write()`.
+- Do not add clock-setting (`-s`, `MMDDhhmm…`), `-f/--file`, or `--debug`.
