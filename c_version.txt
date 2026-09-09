@@ -1,0 +1,88 @@
+date-toto — C language standard and toolchain
+=============================================
+
+Program version : 1.0.0  (DATE_TOTO_VERSION_STRING in include/date_toto.h)
+
+C standard      : ISO/IEC 9899:2011 (C11)
+Compiler flag   : -std=c11
+
+Why C11
+-------
+- Project specification requires C11.
+- static inline civil/epoch helpers in include/date_toto.h.
+- Consistent, portable baseline across Linux and MSYS2 UCRT64 (MinGW-w64).
+- No C++ features; compiled as C only.
+
+POSIX feature macro
+-------------------
+-D_POSIX_C_SOURCE=200809L
+
+Exposes POSIX.1-2008 interfaces used on Linux, notably:
+  - write(2)           (unistd.h)   — single-line output path
+  - clock_gettime(2)   (time.h)     — current instant
+  - localtime_r(3)     (time.h)     — local zone fields (Linux)
+  - sigaction(2)       (signal.h)   — SIGPIPE ignore (Linux)
+  - stat(2)            (sys/stat.h) — -r / --reference
+
+On Windows (_WIN32), install_sigpipe_ignore() is a no-op; there is no
+SIGPIPE. Broken pipes are handled via write() and errno (EPIPE or EINVAL);
+maybe_normalize_broken_pipe_errno() in date_toto_write.c remaps EINVAL on
+pipe fds to EPIPE. Zone fields use localtime_s.
+
+Release compiler flags (from Makefile)
+--------------------------------------
+-std=c11
+-Wall -Wextra -Wpedantic -Werror
+-D_POSIX_C_SOURCE=200809L
+-Iinclude
+-O2
+
+Build layout (from Makefile)
+----------------------------
+Objects and binaries are written under build/:
+  build/.gitkeep         — keeps directory in git
+  build/*.o              — from src/*.c (gitignored)
+  build/date-toto        — release binary (gitignored)
+  build/date-toto-debug  — sanitizer/debug binary (gitignored)
+  build/tests/.gitkeep   — keeps tests subdirectory in git
+  build/tests/*.o        — from tests/*.c (gitignored)
+  build/tests/test_core  — unit-test binary (gitignored)
+
+make clean removes artefacts only; .gitkeep scaffolding remains.
+
+Debug / sanitizer build (make debug)
+------------------------------------
+Linux: adds -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer
+Windows (MinGW/UCRT): -g -O1 -fno-omit-frame-pointer (libasan/libubsan
+are not part of the standard UCRT64 gcc package).
+Links build/date-toto-debug in one step from sources (does not reuse release .o).
+
+Supported compilers
+-------------------
+- GCC (preferred), or Clang if GCC is absent (see Makefile CC selection)
+- Linux: native gcc/clang
+- Windows: MSYS2 UCRT64 — mingw-w64-ucrt-x86_64-gcc
+
+Libraries
+---------
+libc only. No third-party -l dependencies.
+
+C standard library headers used (representative)
+------------------------------------------------
+<stddef.h>   size_t
+<string.h>   memcpy, memset, strlen, strcmp
+<stdio.h>    printf, fprintf, fflush, snprintf (not on stdout output path)
+<stdlib.h>   malloc, exit, free
+<errno.h>    errno, strerror
+<ctype.h>    date-string parsing
+<limits.h>   LLONG_MAX
+<signal.h>   sigaction, SIGPIPE (date_toto_cli.c, Linux)
+<unistd.h>   write, STDOUT_FILENO
+<time.h>     clock_gettime, localtime_r / localtime_s, tzset, tzname
+<sys/stat.h> stat
+<assert.h>   unit tests only
+
+Further reading
+---------------
+C11 standard overview : https://en.cppreference.com/w/c
+GNU GPL v2            : LICENSE.txt in this repository
