@@ -140,17 +140,17 @@ static int parse_iso_prec(const char *prec, int *out)
     return -1;
 }
 
-static int set_format_source(struct date_toto_options *opts, int kind)
+static int format_already_chosen(const struct date_toto_options *opts)
 {
-    /* kind: 1=+FORMAT, 2=-I, 3=-R */
-    int have = (opts->format != NULL ? 1 : 0)
-             + (opts->iso_prec != DATE_TOTO_ISO_NONE ? 1 : 0)
-             + (opts->rfc_email ? 1 : 0);
-    if (have > 0) {
-        date_toto_emit_msg("multiple output formats specified");
-        return -1;
+    if (opts->format != NULL) {
+        return 1;
     }
-    (void)kind;
+    if (opts->iso_prec != DATE_TOTO_ISO_NONE) {
+        return 1;
+    }
+    if (opts->rfc_email) {
+        return 1;
+    }
     return 0;
 }
 
@@ -193,7 +193,8 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
 
         // -R, --rfc-email
         if (strcmp(single_arg, "-R") == 0 || strcmp(single_arg, "--rfc-email") == 0) {
-            if (set_format_source(opts, 3) != 0) {
+            if (format_already_chosen(opts)) {
+                date_toto_emit_msg("multiple output formats specified");
                 return -1;
             }
             opts->rfc_email = 1;
@@ -258,7 +259,8 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
 
         // -I, --iso-8601
         if (strcmp(single_arg, "-I") == 0 || strcmp(single_arg, "--iso-8601") == 0) {
-            if (set_format_source(opts, 2) != 0) {
+            if (format_already_chosen(opts)) {
+                date_toto_emit_msg("multiple output formats specified");
                 return -1;
             }
             opts->iso_prec = DATE_TOTO_ISO_DATE;
@@ -268,7 +270,8 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
         // -I=FMT, --iso-8601=FMT
         if (strncmp(single_arg, "-I", 2) == 0 && single_arg[2] != '\0') {
             int prec;
-            if (set_format_source(opts, 2) != 0) {
+            if (format_already_chosen(opts)) {
+                date_toto_emit_msg("multiple output formats specified");
                 return -1;
             }
             if (parse_iso_prec(single_arg + 2, &prec) != 0) {
@@ -282,7 +285,8 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
         // --iso-8601=FMT
         if (strncmp(single_arg, "--iso-8601=", 11) == 0) {
             int prec;
-            if (set_format_source(opts, 2) != 0) {
+            if (format_already_chosen(opts)) {
+                date_toto_emit_msg("multiple output formats specified");
                 return -1;
             }
             if (parse_iso_prec(single_arg + 11, &prec) != 0) {
@@ -296,7 +300,8 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
         // +FORMAT
         if (single_arg[0] == '+' && opts->format == NULL
             && opts->iso_prec == DATE_TOTO_ISO_NONE && !opts->rfc_email) {
-            if (set_format_source(opts, 1) != 0) {
+            if (format_already_chosen(opts)) {
+                date_toto_emit_msg("multiple output formats specified");
                 return -1;
             }
             opts->format = single_arg + 1;
@@ -315,11 +320,15 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
 
     if (opts->rfc_email) {
         opts->format = date_toto_rfc_format();
-    } else if (opts->iso_prec != DATE_TOTO_ISO_NONE) {
+    } 
+    
+    if (!opts->rfc_email && opts->iso_prec != DATE_TOTO_ISO_NONE) {
         opts->format = date_toto_iso_format(opts->iso_prec);
-    } else if (opts->format == NULL) {
+    } 
+    
+    if (opts->format == NULL) {
         opts->format = DATE_TOTO_DEFAULT_FORMAT;
     }
-
+    
     return 0;
 }
