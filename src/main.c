@@ -64,33 +64,35 @@ int main(int argc, char **argv)
         return DATE_TOTO_EXIT_ERR;
     }
 
+    //Save the current epoch time (number of seconds since 1970-01-01 00:00:00 UTC Unix epoch)
     if (date_toto_now_epoch(&now_epoch) != 0) {
         return DATE_TOTO_EXIT_ERR;
     }
 
     if (opts.date_string != NULL) {
         if (date_toto_parse_date(opts.date_string, now_epoch, opts.utc,
-                                 &epoch)
-            != 0) {
+                                 &epoch) != 0) {
             return DATE_TOTO_EXIT_ERR;
         }
-    } else if (opts.ref_file != NULL) {
+    } 
+    
+    if (opts.date_string == NULL && opts.ref_file != NULL) {
         if (date_toto_parse_reference(opts.ref_file, &epoch) != 0) {
             return DATE_TOTO_EXIT_ERR;
         }
-    } else {
+    } 
+
+    if (opts.date_string == NULL && opts.ref_file == NULL) {
         epoch = now_epoch;
     }
 
     if (date_toto_zone_info(epoch, opts.utc, &offset_sec, tz_abbr,
-                            sizeof(tz_abbr))
-        != 0) {
+                            sizeof(tz_abbr)) != 0) {
         return DATE_TOTO_EXIT_ERR;
     }
 
     if (date_toto_format(opts.format, epoch, offset_sec, tz_abbr, stack_buf,
-                         sizeof(stack_buf), &out, &out_len, &heap)
-        != 0) {
+                         sizeof(stack_buf), &out, &out_len, &heap) != 0) {
         date_toto_emit_error("date_toto_format");
         return DATE_TOTO_EXIT_ERR;
     }
