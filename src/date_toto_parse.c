@@ -102,11 +102,16 @@ static int parse_signed_ll(const char **p, long long *out)
     if (**p == '-') {
         neg = 1;
         (*p)++;
-    } else if (**p == '+') {
+    } 
+    
+    if (!neg && **p == '+') {
         (*p)++;
     }
+
     while (isdigit((unsigned char)**p)) {
+        //Convert the character to an integer
         int dig = **p - '0';
+        //Check if the number is too large to fit in a long long integer
         if (v > (LLONG_MAX - dig) / 10) {
             return -1;
         }
@@ -114,10 +119,18 @@ static int parse_signed_ll(const char **p, long long *out)
         (*p)++;
         digits++;
     }
+    //Check if the number is empty
     if (digits == 0) {
         return -1;
     }
-    *out = neg ? -v : v;
+    //If the number is negative, multiply it by -1
+    if (neg) { 
+        *out = v * -1LL;
+    }
+    //If the number is positive, set it to the value of v
+    if (!neg) {
+        *out = v;
+    }
     return 0;
 }
 
@@ -680,9 +693,9 @@ int date_toto_parse_date(const char *date_string, long long now_epoch,
     if (try_parse_iso(date_string, now_epoch, use_utc, out_epoch) == 0) {
         return 0;
     }
+
     if (try_parse_keyword_or_relative(date_string, now_epoch, use_utc,
-                                      out_epoch)
-        == 0) {
+                                      out_epoch) == 0) {
         return 0;
     }
 
