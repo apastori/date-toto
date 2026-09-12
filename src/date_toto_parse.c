@@ -58,28 +58,32 @@ static void skip_ws(const char **p)
 
 static int parse_int_n(const char **p, int n, int *out)
 {
-    int v = 0;
+    int integer_output = 0;
     int i;
     for (i = 0; i < n; i++) {
+        //Check if the character is a digit
         if (!isdigit((unsigned char)(*p)[i])) {
             return -1;
         }
-        v = v * 10 + ((*p)[i] - '0');
+        int char_to_int = (*p)[i] - '0';
+        integer_output = integer_output * 10 + char_to_int;
     }
+    //Increment the pointer by n
     *p += n;
-    *out = v;
+    //Set the output to the integer output
+    *out = integer_output;
     return 0;
 }
 
 static int parse_int_var(const char **p, int *out)
 {
-    int v = 0;
+    int integer_output = 0;
     int digits = 0;
     if (**p == '+' || **p == '-') {
         return -1;
     }
     while (isdigit((unsigned char)**p)) {
-        v = v * 10 + (**p - '0');
+        integer_output = integer_output * 10 + (**p - '0');
         (*p)++;
         digits++;
         if (digits > 9) {
@@ -89,14 +93,14 @@ static int parse_int_var(const char **p, int *out)
     if (digits == 0) {
         return -1;
     }
-    *out = v;
+    *out = integer_output;
     return 0;
 }
 
 static int parse_signed_ll(const char **p, long long *out)
 {
     int neg = 0;
-    long long v = 0;
+    long long integer_output = 0;
     int digits = 0;
 
     if (**p == '-') {
@@ -112,10 +116,10 @@ static int parse_signed_ll(const char **p, long long *out)
         //Convert the character to an integer
         int dig = **p - '0';
         //Check if the number is too large to fit in a long long integer
-        if (v > (LLONG_MAX - dig) / 10) {
+        if (integer_output > (LLONG_MAX - dig) / 10) {
             return -1;
         }
-        v = v * 10 + dig;
+        integer_output = integer_output * 10 + dig;
         (*p)++;
         digits++;
     }
@@ -125,11 +129,11 @@ static int parse_signed_ll(const char **p, long long *out)
     }
     //If the number is negative, multiply it by -1
     if (neg) { 
-        *out = v * -1LL;
+        *out = integer_output * -1LL;
     }
     //If the number is positive, set it to the value of v
     if (!neg) {
-        *out = v;
+        *out = integer_output;
     }
     return 0;
 }
@@ -477,25 +481,36 @@ static int try_parse_iso(const char *s, long long now_epoch, int use_utc,
     int have_off = 0;
     long zone_off = 0;
     char tz[64];
+    int parse_date = 0;
 
+    //Parse the year
     if (parse_int_n(&p, 4, &y) == 0 && *p == '-') {
+        // consume the '-'
         p++;
+        //Parse the month
         if (parse_int_n(&p, 2, &mo) != 0) {
             return -1;
         }
+        // if the next character is not a '-', return an error
         if (*p != '-') {
             return -1;
         }
+        // consume the '-'
         p++;
+        //Parse the day
         if (parse_int_n(&p, 2, &d) != 0) {
             return -1;
         }
         have_date = 1;
+        // if the next character is a 'T' or 't' or ' ', parse the time
         if (*p == 'T' || *p == 't' || *p == ' ') {
+            // consume the 'T' or 't' or ' '
             p++;
+            //Parse the hours, minutes, and seconds
             if (parse_time_hms(&p, &hh, &mi, &ss) != 0) {
                 return -1;
             }
+            //Set the have_time flag to 1
             have_time = 1;
         }
         if (parse_tz_suffix(&p, &off, &have_off) != 0) {
@@ -505,12 +520,19 @@ static int try_parse_iso(const char *s, long long now_epoch, int use_utc,
         if (*p != '\0') {
             return -1;
         }
-    } else {
+        parse_date = 1;
+    }
+
+    if (!parse_date) {
+        //Parse the time
         p = s;
+        //Parse the hours, minutes, and seconds
         if (parse_time_hms(&p, &hh, &mi, &ss) != 0) {
             return -1;
         }
+        //Set the have_time flag to 1
         have_time = 1;
+        //Parse the timezone suffix
         if (parse_tz_suffix(&p, &off, &have_off) != 0) {
             return -1;
         }
@@ -520,8 +542,8 @@ static int try_parse_iso(const char *s, long long now_epoch, int use_utc,
         }
     }
 
-    if (date_toto_zone_info(now_epoch, use_utc, &zone_off, tz, sizeof(tz))
-        != 0) {
+    if (date_toto_zone_info(now_epoch, use_utc, &zone_off, tz, sizeof(tz)) != 0) {
+        //Set the output to the error code
         return -1;
     }
 
