@@ -46,3 +46,15 @@ void date_toto_emit_msg(const char *message)
 {
     fprintf(stderr, "date-toto: %s\n", message);
 }
+
+/*
+ * date_toto_emit_invalid_option — print bad flag and a help hint.
+ *
+ * Preconditions: opt != NULL (argv token, e.g. "-x" or "--bogus").
+ * Postconditions: exactly two lines on stderr.
+ */
+void date_toto_emit_invalid_option(const char *opt)
+{
+    fprintf(stderr, "date-toto: invalid option -- '%s'\n", opt);
+    fprintf(stderr, "Try 'date-toto --help' for more information.\n");
+}

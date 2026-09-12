@@ -101,16 +101,16 @@ int install_sigpipe_ignore(void)
 const char *date_toto_iso_format(int iso_prec)
 {
     switch (iso_prec) {
-    case DATE_TOTO_ISO_DATE:
-        return ISO_DATE;
-    case DATE_TOTO_ISO_HOURS:
-        return ISO_HOURS;
-    case DATE_TOTO_ISO_MINUTES:
-        return ISO_MINUTES;
-    case DATE_TOTO_ISO_SECONDS:
-        return ISO_SECONDS;
-    default:
-        return NULL;
+        case DATE_TOTO_ISO_DATE:
+            return ISO_DATE;
+        case DATE_TOTO_ISO_HOURS:
+            return ISO_HOURS;
+        case DATE_TOTO_ISO_MINUTES:
+            return ISO_MINUTES;
+        case DATE_TOTO_ISO_SECONDS:
+            return ISO_SECONDS;
+        default:
+            return NULL;
     }
 }
 
@@ -206,7 +206,8 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
 
             if (opts->date_string != NULL || opts->ref_file != NULL) {
                 date_toto_emit_msg(
-                    "the options may not be used together: -d --date / -r --reference");
+                    "the options may not be used together: -d --date / -r --reference"
+                );
                 return -1;
             }
 
@@ -221,13 +222,13 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
         }
 
         // --date=STRING
-        if (strncmp(single_arg, "--date=", 7) == 0) {
+        if (strncmp(single_arg, "--date=", sizeof("--date=") - 1) == 0) {
             if (opts->date_string != NULL || opts->ref_file != NULL) {
                 date_toto_emit_msg(
                     "the options may not be used together: -d --date / -r --reference");
                 return -1;
             }
-            opts->date_string = single_arg + 7;
+            opts->date_string = single_arg + (sizeof("--date=") - 1);
             continue;
         }
 
@@ -247,13 +248,13 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
         }
 
         // --reference=FILE
-        if (strncmp(single_arg, "--reference=", 12) == 0) {
+        if (strncmp(single_arg, "--reference=", sizeof("--reference=") - 1) == 0) {
             if (opts->date_string != NULL || opts->ref_file != NULL) {
                 date_toto_emit_msg(
                     "the options may not be used together: -d --date / -r --reference");
                 return -1;
             }
-            opts->ref_file = single_arg + 12;
+            opts->ref_file = single_arg + (sizeof("--reference=") - 1);
             continue;
         }
 
@@ -268,13 +269,14 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
         }
 
         // -I=FMT, --iso-8601=FMT
-        if (strncmp(single_arg, "-I", 2) == 0 && single_arg[2] != '\0') {
+        if (strncmp(single_arg, "-I", sizeof("-I") - 1) == 0
+            && single_arg[sizeof("-I") - 1] != '\0') {
             int prec;
             if (format_already_chosen(opts)) {
                 date_toto_emit_msg("multiple output formats specified");
                 return -1;
             }
-            if (parse_iso_prec(single_arg + 2, &prec) != 0) {
+            if (parse_iso_prec(single_arg + (sizeof("-I") - 1), &prec) != 0) {
                 date_toto_emit_msg("invalid --iso-8601 argument");
                 return -1;
             }
@@ -283,13 +285,14 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
         }
 
         // --iso-8601=FMT
-        if (strncmp(single_arg, "--iso-8601=", 11) == 0) {
+        if (strncmp(single_arg, "--iso-8601=", sizeof("--iso-8601=") - 1) == 0) {
             int prec;
             if (format_already_chosen(opts)) {
                 date_toto_emit_msg("multiple output formats specified");
                 return -1;
             }
-            if (parse_iso_prec(single_arg + 11, &prec) != 0) {
+            if (parse_iso_prec(single_arg + (sizeof("--iso-8601=") - 1),
+                               &prec) != 0) {
                 date_toto_emit_msg("invalid --iso-8601 argument");
                 return -1;
             }
@@ -310,7 +313,7 @@ int parse_options(int argc, char **argv, struct date_toto_options *opts)
 
         // invalid option
         if (single_arg[0] == '-') {
-            date_toto_emit_msg("invalid option");
+            date_toto_emit_invalid_option(single_arg);
             return -1;
         }
 
